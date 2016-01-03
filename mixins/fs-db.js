@@ -35,6 +35,7 @@ module.exports = function (repo, fs) {
   repo.readPackedRef = readPackedRef;
   repo.readPackedRefs = readPackedRefs;
   repo.hasHash = hasHash;
+  repo.getBranch = getBranch;
   repo.init = init;
   repo.setShallow = setShallow;
 
@@ -92,6 +93,17 @@ module.exports = function (repo, fs) {
       catch (err) { return callback(err); }
       callback(null, hash);
     });
+  }
+
+  function getBranch(callback) {
+      readRef('HEAD', function (err, ref) {
+          if (err) {
+            callback(err);
+          }
+          // 这里本可以写/.+refs\/heads\//来去掉heads后面的斜线，但是esl会认为是注释，压缩过后后面的代码中的require全无效，这种错误超级难查，所以写成下面这种形式
+          var branch = ref.replace(/.+refs\/heads./, '');
+          callback(null, branch);
+      });
   }
 
   function readPackedRef(ref, callback) {
