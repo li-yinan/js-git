@@ -7,6 +7,7 @@ var parsePackEntry = require('../lib/pack-codec').parseEntry;
 var applyDelta = require('../lib/apply-delta');
 var sha1 = require('git-sha1');
 var pathJoin = require('pathjoin');
+var mkdirp = require('mkdirp');
 
 // The fs object has the following interface:
 // - readFile(path) => binary
@@ -29,6 +30,10 @@ module.exports = function (repo, fs) {
   repo.saveRaw = saveRaw;
   repo.readRef = readRef;
   repo.updateRef = updateRef;
+  repo.updateRefs = updateRefs;
+  repo.updatePackedRef = updatePackedRef;
+  repo.readPackedRef = readPackedRef;
+  repo.readPackedRefs = readPackedRefs;
   repo.hasHash = hasHash;
   repo.init = init;
   repo.setShallow = setShallow;
@@ -54,6 +59,24 @@ module.exports = function (repo, fs) {
       if(err) return callback(err);
       fs.rename(lock, path, callback);
     });
+  }
+
+  function updateRefs(refs, callback) {
+      var keys = Object.keys(refs);
+      var cnt = 0;
+
+      function count() {
+          cnt++;
+          if (cnt === keys.length) {
+              updatePackedRef(refs, callback);
+          }
+      }
+
+      for (var i = 0; i < keys.length; i++) {
+          var ref = keys[i];
+          var hash = refs[ref];
+          updateRef(ref, hash, count);
+      }
   }
 
   function readRef(ref, callback) {
@@ -90,6 +113,47 @@ module.exports = function (repo, fs) {
     });
   }
 
+  function readPackedRefs(callback) {
+    var path = pathJoin(repo.rootPath, "packed-refs");
+    fs.readFile(path, function (err, binary) {
+      if (binary === undefined) return callback(err);
+      var hash;
+      try {
+        var text = bodec.toRaw(binary);
+        var lines = text.split('\n');
+        var refs = {};
+        for (var i = 0 ; i < lines.length; i++) {
+            var line = lines[i];
+            if (line) {
+                line = line.split(' ');
+                refs[line[1]] = line[0];
+            }
+        }
+      }
+      catch (err) {
+        return callback(err);
+      }
+      callback(null, refs);
+    });
+  }
+
+  function updatePackedRef(refs, callback) {
+    if (!callback) return updatePackedRef.bind(repo, refs);
+    var path = pathJoin(repo.rootPath, 'packed-refs');
+    var lock = path + ".lock";
+    var content = [];
+    for (var ref in refs) {
+        if (refs.hasOwnProperty(ref)) {
+            var hash = refs[ref];
+            content.push(hash + ' ' + ref + '\n');
+        }
+    }
+    fs.writeFile(lock, content.join(''), function(err) {
+      if(err) return callback(err);
+      fs.rename(lock, path, callback);
+    });
+  }
+
   function saveAs(type, body, callback) {
     if (!callback) return saveAs.bind(repo, type, body);
     var raw, hash;
@@ -109,13 +173,15 @@ module.exports = function (repo, fs) {
 
   function saveRaw(hash, raw, callback) {
     if (!callback) return saveRaw.bind(repo, hash, raw);
-    var buffer, path;
+    var buffer, path, dir;
     try {
       if (sha1(raw) !== hash) {
         throw new Error("Save data does not match hash");
       }
       buffer = deflate(raw);
       path = hashToPath(hash);
+      dir = hashToDir(hash);
+      mkdirp(dir);
     }
     catch (err) { return callback(err); }
     // Try to read the object first.
@@ -251,6 +317,10 @@ module.exports = function (repo, fs) {
 
   function hashToPath(hash) {
     return pathJoin(repo.rootPath, "objects", hash.substring(0, 2), hash.substring(2));
+  }
+
+  function hashToDir(hash) {
+    return pathJoin(repo.rootPath, "objects", hash.substring(0, 2));
   }
 
 };

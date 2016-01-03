@@ -10,7 +10,7 @@ function request(method, url, headers, body, callback) {
   if (!callback) {
     return request.bind(null, method, url, headers, body);
   }
-  var xhr = new XMLHttpRequest();
+  var xhr = new window.XMLHttpRequest();
   xhr.open(method, url, true);
   xhr.responseType = "arraybuffer";
 

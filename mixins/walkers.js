@@ -3,6 +3,9 @@ var modes = require('../lib/modes.js');
 module.exports = function (repo) {
   repo.logWalk = logWalk;   // (ref) => stream<commit>
   repo.treeWalk = treeWalk; // (treeHash) => stream<object>
+  repo.resolveRef = function (hash, callback) {
+      resolveRef(repo, hash, callback);
+  };
 };
 module.exports.walk = walk;
 
@@ -53,7 +56,12 @@ function compare(commit, other) {
 function treeWalk(hash, callback) {
   if (!callback) return treeWalk.bind(this, hash);
   var repo = this;
-  return repo.loadAs("tree", hash, onTree);
+  return resolveRef(this, hash, function (err, hash) {
+      if (err) {
+        callback();
+      }
+      repo.loadAs("tree", hash, onTree);
+  });
 
   function onTree(err, body) {
     if (!body) return callback(err || new Error("Missing tree " + hash));
@@ -101,9 +109,16 @@ function resolveRef(repo, hashish, callback) {
   if (/^[0-9a-f]{40}$/.test(hashish)) {
     return callback(null, hashish);
   }
+  if (/^ref:/.test(hashish)) {
+      var matches = /^ref: *(.+)/.exec(hashish);
+      if (matches) {
+          hashish = matches[1];
+      }
+  }
   repo.readRef(hashish, function (err, hash) {
     if (!hash) return callback(err || new Error("Bad ref " + hashish));
     callback(null, hash);
+    resolveRef(repo, hash, callback);
   });
 }
 
